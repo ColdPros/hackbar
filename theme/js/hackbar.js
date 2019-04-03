@@ -1,8 +1,9 @@
 /**
 Create a panel, and add listeners for panel show/hide events.
 */
+var namespace = chrome;
 try{
-	browser.devtools.panels.create(
+	namespace.devtools.panels.create(
 		"HackBar",
 		"/icons/icon.png",
 		"/theme/hackbar-panel.html"

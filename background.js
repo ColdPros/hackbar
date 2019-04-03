@@ -2,65 +2,64 @@
 When we receive the message, execute the given script in the given
 tab.
 */
-var url;
-var refrerrer;
+'use strict';
+var namespace = chrome;
+var referer;
 var user_agent;
 var cookie;
 var method;
 var postDataCurrent;
-var MAX_SIZE_STORAGE = 20;
 
 function getPostData(e) {
 	if ( e.method == "POST" && e.requestBody ) {
 		let rawData = e.requestBody.formData;
-		postDataCurrent = "";
+		var post_data_array = [];
 		for (let key in rawData) {
 			if (rawData.hasOwnProperty(key)) {
-				postDataCurrent = postDataCurrent + key + "=" + rawData[key] + "&";
+				var item = key + "=" + rawData[key];
+				post_data_array.push(item);
 			}
 		}
-		postDataCurrent = postDataCurrent.slice(0,-1); // remove last &
+		postDataCurrent = post_data_array.join("&")
 	}
 }
 
-browser.webRequest.onBeforeRequest.addListener(
+namespace.webRequest.onBeforeRequest.addListener(
 	getPostData,
-	{urls: ["<all_urls>"], types: ["main_frame"]},
+	{urls: ["<all_urls>"]},
 	["requestBody"]
 );
 
-function getCurrentTabUrl(sendResponse){
-	browser.tabs.query({active:true, currentWindow:true}).then(tabs => {
-		currentTabUrl = tabs[0].url;
-		sendResponse({url: currentTabUrl, data: postDataCurrent});
-	});
-}
-
-function isExistHeaders(name, requestHeaders){
-	for(i=0; i< requestHeaders.length; i++){
-		var v = requestHeaders[i];
-		if(v.name.toLowerCase() === name){
-			return i;
+function rewriteHeaders(e) {
+	var index_referer, index_user_agent, index_cookie;
+	index_cookie = index_referer = index_user_agent = -1;
+	for(var i=0; i< e.requestHeaders.length; i++){
+		var v = e.requestHeaders[i];
+		switch(v.name.toLowerCase()){
+			case 'referer':
+				index_referer = i;
+				break;
+			case 'user-agent':
+				index_user_agent = i;
+				break;
+			case 'cookie':
+				index_cookie = i;
+				break;
 		}
 	}
-	return -1;
-}
-function rewriteHeaders(e) {
 	//add referer
-	if(refrerrer){
-		index_referer = isExistHeaders('referer', e.requestHeaders);
+	if(referer){
 		if(index_referer != -1){
-			e.requestHeaders[index_referer].value = refrerrer;
+			e.requestHeaders[index_referer].value = referer;
 		}else{
 			e.requestHeaders.push({
 				name: "Referer",
-				value: refrerrer
+				value: referer
 			});
 		}
 	}
 	//modify user agent
 	if(user_agent){
-		index_user_agent = isExistHeaders('user-agent', e.requestHeaders);
 		if(index_user_agent != -1){
 			e.requestHeaders[index_user_agent].value = user_agent;
 		}else{
@@ -72,7 +71,6 @@ function rewriteHeaders(e) {
 	}
 	//modify cookie
 	if(cookie){
-		index_cookie = isExistHeaders('cookie', e.requestHeaders);
 		if(index_cookie != -1){
 			e.requestHeaders[index_cookie].value = cookie;
 		}else{
@@ -82,12 +80,11 @@ function rewriteHeaders(e) {
 			});
 		}
 	}
-	browser.webRequest.onBeforeSendHeaders.removeListener(rewriteHeaders);
 	return {requestHeaders: e.requestHeaders};
 }
 
 function handleMessage(request, sender, sendResponse) {
-	if (sender.url !== browser.runtime.getURL("/theme/hackbar-panel.html")) {
+	if (sender.url !== namespace.runtime.getURL("/theme/hackbar-panel.html")) {
 		return;
 	}
 
@@ -96,62 +93,37 @@ function handleMessage(request, sender, sendResponse) {
 	switch(action){
 		case 'send_requests':
 			var Data = request.data;
-			url = Data.url;
+			var url = Data.url;
 			method = Data.method;
-			refrerrer = Data.refrerrer;
+			referer = Data.referer;
 			user_agent = Data.user_agent;
 			cookie = Data.cookie;
-			//content_type = request.content_type;
 			if(method == 'GET'){
-				browser.tabs.update({url: url});
+				namespace.tabs.update(tabId, {url: url});
 			}else{
 				var post_data = JSON.stringify(Data.post_data);
-				browser.tabs.executeScript(tabId, {code: 'var post_data = "'+encodeURIComponent(post_data)+'"; var url = "'+ encodeURIComponent(url) +'"'}, function(){
-					browser.tabs.executeScript(tabId, {file: 'theme/js/post_form.js'});
+				namespace.tabs.executeScript(tabId, {code: 'var post_data = "'+encodeURIComponent(post_data)+'"; var url = "'+ encodeURIComponent(url) +'"'}, function(){
+					namespace.tabs.executeScript(tabId, {file: 'theme/js/post_form.js'});
 				});
 			}
-			browser.webRequest.onBeforeSendHeaders.addListener(
+			namespace.webRequest.onBeforeSendHeaders.addListener(
 				rewriteHeaders,
-				{urls: ["<all_urls>"], types: ["main_frame"]},
+				{urls: ["<all_urls>"], tabId: tabId},
 				["blocking", "requestHeaders"]
 			);
 			sendResponse({status: true});
 			break;
 		case 'load_url':
-			getCurrentTabUrl(sendResponse);
+			namespace.tabs.get(tabId, function (tab){
+				sendResponse({url: tab.url, data: postDataCurrent});
+			});
+
 			break;
 		case 'selected_text':
 			var code = 'var user_input; user_input = prompt("Please enter some text")';
-			browser.tabs.executeScript(tabId, {code: code}, function(user_input){
+			namespace.tabs.executeScript(tabId, {code: code}, function(user_input){
 				sendResponse({user_input: user_input[0]});
 			});
-			break;
-		case 'set_storage':
-			// var data = request.data;
-			// var key = data.key;
-			// var value = data.value;
-
-			// browser.storage.local.get(key, function(result){
-			// 	var current_vaule = (result[key] === undefined) ? [] : result[key];
-			// 	current_vaule.push(value);
-			// 	console.log(current_vaule);
-			// 	browser.storage.local.set({key: value}, function(){
-			// 		console.log('Value is set to ' + value);
-			// 	});
-			// });
-			break;
-
-		case 'get_storage':
-			// var key = request.data;
-			// browser.storage.local.get([key], function(result){
-			// 	var current_vaule = result[key];
-			// 	var last_value = undefined;
-			// 	if(current_vaule != undefined){
-			// 		last_value = current_vaule.pop();
-			// 		browser.storage.local.set({[key]: current_vaule});
-			// 	}
-			// 	sendResponse({status: true, value: last_value});
-			// });
 			break;
 	}
 	return true;
@@ -160,4 +132,4 @@ function handleMessage(request, sender, sendResponse) {
 /**
 Listen for messages from our devtools panel.
 */
-browser.runtime.onMessage.addListener(handleMessage);
+namespace.runtime.onMessage.addListener(handleMessage);

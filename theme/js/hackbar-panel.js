@@ -1,11 +1,7 @@
-var _TYPE_FORM_DATA = 'application/x-www-form-urlencoded';
-var _TYPE_JSON = 'application/json';
-var _TYPE_XML = 'application/xml';
-var LOCAL_STORAGE = {'post_data_field': [], 'referer_field': [], 'user_agent_field': [], 'cookie_field': []};
-
+var namespace = chrome;
 var urlField = $('#url_field');
 var postDataField = $('#post_data_field');
-var referrerField = $('#referrer_field');
+var refererField = $('#referer_field');
 var userAgentField = $('#user_agent_field');
 var cookieField = $('#cookie_field');
 
@@ -14,7 +10,7 @@ var splitUrlBtn = $('#split_url');
 var executeBtn = $('#execute');
 
 var enablePostBtn = $('#enable_post_btn');
-var enableReferrerBtn = $('#enable_referrer_btn');
+var enableRefererBtn = $('#enable_referer_btn');
 var enableUserAgentBtn = $('#enable_user_agent_btn');
 var enableCookieBtn = $('#enable_cookie_btn');
 
@@ -24,6 +20,7 @@ var menu_btn_array = ['md5', 'sha1', 'sha256', 'rot13',
 'xss_string_from_charcode', 'xss_html_characters', 'xss_alert',
 'jsonify', 'uppercase', 'lowercase',];
 
+var currentTabId = namespace.devtools.inspectedWindow.tabId;
 var currentFocusField = urlField;
 function onFocusListener(){
 	currentFocusField = $(this);
@@ -38,21 +35,10 @@ function jsonValid(text){
 	}
 }
 
-function getContentType(content_type_value){
-
-	if(content_type_value === _TYPE_XML){
-		return 'application/xml';
-	}else if(content_type_value === _TYPE_JSON){
-		return 'application/json';
-	}
-	return 'application/x-www-form-urlencoded';
-	
-}
-
 function getFieldFormData(dataString){
 	var fields = Array();
 	var f_split = dataString.trim().split('&');
-	for (i in f_split){
+	for (var i in f_split){
 		var f = f_split[i].match(/(^.*?)=(.*)/);
 		if(f.length == 3){
 			var item = new Object();
@@ -94,46 +80,21 @@ function toggleElement(elementBtn, elementBlock){
 }
 
 function sendToBackground(action, data, response){
-	sending = browser.runtime.sendMessage({
-		tabId: browser.devtools.inspectedWindow.tabId,
+	namespace.runtime.sendMessage({
+		tabId: currentTabId,
 		action: action,
 		data: data
-	});
-	sending.then(function(message){
+	}, function(message){
 		response(message) 
 	});
 }
 
-// Undo ctrlZ
-function setStorage(key, value){
-	sendToBackground('set_storage', {key: key, value: value}, function(response){});
-}
-
-function getStorage(key, result){
-	sendToBackground('get_storage', key, function(response){
-		var value = response._value;
-		result(value);
-	});
-}
-
-function undo(){
-	var key = currentFocusField.attr('id');
-	getStorage(key, function(_value){
-		currentFocusField.val(_value);
-	});
-}
-
 function loadUrl() {
-	sending = browser.runtime.sendMessage({
-		tabId: browser.devtools.inspectedWindow.tabId,
-		action: 'load_url',
-		data: null
-	});
-	sending.then(function(message){
-		if (message.url){
+	sendToBackground('load_url', null, function(message){
+		if ('url' in message && message.url){
 			urlField.val(message.url);
 		}
-		if (message.data && postDataField.val() === "") {
+		if ('data' in message && message.data && postDataField.val() === "") {
 			postDataField.val(message.data);
 		}
 	});
@@ -148,21 +109,18 @@ function splitUrl(){
 }
 
 function execute(){
-	var refrerrer = null;
+	var referer = null;
 	var user_agent = null;
 	var cookie = null;
 	var post_data = null;
-	// var content_type = null;
 	var method = 'GET';
 
-	if(enableReferrerBtn.prop('checked')){
-		refrerrer = referrerField.val();
+	if(enableRefererBtn.prop('checked')){
+		referer = refererField.val();
 	}
 	if(enablePostBtn.prop('checked')){
 		method = 'POST';
 		post_data = getFieldFormData(postDataField.val());
-		// var content_type_value = $("input[name=content_type]:checked").val();
-		// content_type = getContentType(content_type_value);
 	}
 	if(enableUserAgentBtn.prop('checked')){
 		user_agent = userAgentField.val();
@@ -179,10 +137,10 @@ function execute(){
 	if (!url){
 		return;
 	}
-	var sending = browser.runtime.sendMessage({
-		tabId: browser.devtools.inspectedWindow.tabId,
+	namespace.runtime.sendMessage({
+		tabId: currentTabId,
 		action: 'send_requests',
-		data: {url: url, method: method, post_data: post_data, refrerrer: refrerrer, user_agent: user_agent, cookie: cookie}
+		data: {url: url, method: method, post_data: post_data, referer: referer, user_agent: user_agent, cookie: cookie}
 	});
 	
 }
@@ -318,7 +276,6 @@ function onclickMenu(action){
 			}
 		});
 		break;
-		//'sql_mysql_char', 'sql_basic_info_column', 'sql_convert_utf8', 'sql_convert_latin1', 'sql_mssql_char', 'sql_oracle_char', 'sql_union_statement', 'sql_spaces_to_inline_comments'
 		case 'sql_mysql_char':
 		getSelectedText(function(txt){
 			if(txt){
@@ -420,7 +377,7 @@ splitUrlBtn.bind('click', splitUrl);
 executeBtn.bind('click', execute);
 
 enablePostBtn.click(function(){ toggleElement($(this), postDataField.closest('.block'))});
-enableReferrerBtn.click(function(){ toggleElement($(this), referrerField.closest('.block'))});
+enableRefererBtn.click(function(){ toggleElement($(this), refererField.closest('.block'))});
 enableUserAgentBtn.click(function(){ toggleElement($(this), userAgentField.closest('.block'))});
 enableCookieBtn.click(function(){ toggleElement($(this), cookieField.closest('.block'))});
 
@@ -432,7 +389,7 @@ menu_btn_array.forEach(function(elementID){
 //on fucus listenner field
 urlField.bind('click', onFocusListener, false);
 postDataField.bind('click', onFocusListener, false);
-referrerField.bind('click', onFocusListener, false);
+refererField.bind('click', onFocusListener, false);
 userAgentField.bind('click', onFocusListener, false);
 cookieField.bind('click', onFocusListener, false);
 
